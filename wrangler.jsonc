@@ -24,5 +24,11 @@
 	},
 	"observability": {
 		"enabled": true
-	}
+	},
+	"r2_buckets": [
+		{
+			"binding": "PRESENTATIONS_BUCKET",
+			"bucket_name": "mcp-presentations"
+		}
+	]
 }

@@ -6,6 +6,13 @@ import { XMLParser, XMLBuilder } from "fast-xml-parser";
 
 // Define our MCP agent with tools
 export class MyMCP extends McpAgent {
+	env: Env;
+
+	constructor(state: DurableObjectState, env: Env) {
+		super(state, env);
+		this.env = env;
+	}
+
 	server = new McpServer({
 		name: "PowerPoint MCP Server",
 		version: "1.0.0",
@@ -15,9 +22,10 @@ export class MyMCP extends McpAgent {
 		// Tool to create a new PowerPoint presentation
 		this.server.tool("createPresentation", { fileName: z.string() }, async ({ fileName }) => {
 			const pptxBuffer = await createPresentation(fileName);
-			const base64 = pptxBuffer.toString('base64');
+			const key = `presentation-${crypto.randomUUID()}.pptx`;
+			await this.env.PRESENTATIONS_BUCKET.put(key, pptxBuffer);
 			return {
-				content: [{ type: "text", text: `Created presentation "${fileName}". Base64: ${base64}` }],
+				content: [{ type: "text", text: `Created presentation "${fileName}" stored at key: ${key}` }],
 			};
 		});
 
@@ -25,16 +33,23 @@ export class MyMCP extends McpAgent {
 		this.server.tool(
 			"insertSlide",
 			{
-				presentationBase64: z.string(),
+				presentationKey: z.string(),
 				position: z.number(),
 				slideTitle: z.string(),
 			},
-			async ({ presentationBase64, position, slideTitle }) => {
-				const pptxBuffer = Buffer.from(presentationBase64, 'base64');
-				const newPptxBuffer = await insertNewSlide(pptxBuffer, position, slideTitle);
-				const newBase64 = newPptxBuffer.toString('base64');
+			async ({ presentationKey, position, slideTitle }) => {
+				const object = await this.env.PRESENTATIONS_BUCKET.get(presentationKey);
+				if (!object) {
+					return {
+						content: [{ type: "text", text: "Presentation not found" }],
+					};
+				}
+				const pptxBuffer = await object.arrayBuffer();
+				const newPptxBuffer = await insertNewSlide(Buffer.from(pptxBuffer), position, slideTitle);
+				const newKey = `presentation-${crypto.randomUUID()}.pptx`;
+				await this.env.PRESENTATIONS_BUCKET.put(newKey, newPptxBuffer);
 				return {
-					content: [{ type: "text", text: `Inserted slide "${slideTitle}" at position ${position}. New Base64: ${newBase64}` }],
+					content: [{ type: "text", text: `Inserted slide "${slideTitle}" at position ${position}. New presentation stored at key: ${newKey}` }],
 				};
 			},
 		);
